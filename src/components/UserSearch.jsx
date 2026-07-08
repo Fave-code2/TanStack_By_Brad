@@ -1,18 +1,24 @@
 import { useState, useEffect, use } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { fetchGithubUser } from "../api/github";
+import { fetchGithubUser, searchGithubUser } from "../api/github";
 import UserCard from "./UserCard";
 import RecentSearches from "./RecentSearches";
+import { useDebounce } from "use-debounce";
 
 const UserSearch = () => {
-  const [username, setUserame] = useState("");
-  const [submittedUsername, setSubmittedUserame] = useState("");
+  const [username, setUsername] = useState("");
+  const [submittedUsername, setSubmittedUsername] = useState("");
   const [recentUsers, setRecentUsers] = useState(() => {
     const stored = localStorage.getItem("recentUsers");
     return stored ? JSON.parse(stored) : [];
   });
 
-  const { data, isLoading, isError, error } = useQuery({
+  // The debouncedUsername represents the username that's on the input after a stop typing
+  const [debouncedUsername] = useDebounce(username, 300);
+  const [showSuggestions, setShowSuggestions] = useState(false); // The drop state
+
+  // Query to fetch specfic user
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["users", submittedUsername],
     queryFn: () => fetchGithubUser(submittedUsername),
 
@@ -20,18 +26,29 @@ const UserSearch = () => {
     enabled: !!submittedUsername,
   });
 
+  // Query to fetch suggestions for searched user.
+  const { data: suggestions } = useQuery({
+    queryKey: ["github-user-suggestion", debouncedUsername],
+    queryFn: () => searchGithubUser(debouncedUsername),
+    enabled: debouncedUsername.length > 1,
+  });
+
+  // Form submit function to handle input search submitting
   const handleSubmit = (e) => {
     e.preventDefault();
     const trimed = username.trim();
     if (!trimed) return;
-    setSubmittedUserame(username.trim());
+    setSubmittedUsername(username.trim());
 
     setRecentUsers((prev) => {
       const updated = [trimed, ...prev.filter((u) => u !== trimed)];
       return updated.slice(0, 5);
     });
+
+    setUsername("");
   };
 
+  // Saving recent users to localStorage
   useEffect(() => {
     localStorage.setItem("recentUsers", JSON.stringify(recentUsers));
   }, [recentUsers]);
@@ -39,12 +56,45 @@ const UserSearch = () => {
   return (
     <>
       <form onSubmit={handleSubmit} className="form">
-        <input
-          type="text"
-          placeholder="Enter Github Username..."
-          value={username}
-          onChange={(e) => setUserame(e.target.value)}
-        />
+        <div className="dropdown-wrapper">
+          <input
+            type="text"
+            placeholder="Enter Github Username..."
+            value={username}
+            onChange={(e) => {
+              const val = e.target.value;
+              setUsername(val);
+              setShowSuggestions(val.trim().length > 1);
+            }}
+          />
+
+          {showSuggestions && suggestions?.length > 0 && (
+            <ul className="suggestions">
+              {suggestions.slice(0, 5).map((user) => (
+                <li
+                  key={user.login}
+                  onClick={() => {
+                    setUsername(user.login);
+                    setShowSuggestions(false);
+
+                    if (submittedUsername !== user.login) {
+                      setSubmittedUsername(user.login);
+                    } else {
+                      refetch();
+                    }
+                  }}
+                >
+                  <img
+                    src={user.avatar_url}
+                    alt={user.login}
+                    className="avatar-xs"
+                  />
+                  {user.login}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
 
         <button type="submit">Search</button>
       </form>
@@ -58,8 +108,8 @@ const UserSearch = () => {
         <RecentSearches
           users={recentUsers}
           onSelect={(username) => {
-            setSubmittedUserame(username);
-            setUserame(username);
+            setSubmittedUsername(username);
+            setUsername(username);
           }}
         />
       )}
