@@ -1,7 +1,11 @@
 import React from "react";
 import { FaClock, FaUser } from "react-icons/fa";
+import { useQueryClient } from "@tanstack/react-query";
+import { fetchGithubUser } from "../api/github";
 
 const RecentSearches = ({ users, onSelect }) => {
+  const queryClient = useQueryClient();
+
   return (
     <div className="recent-searches">
       <div className="recent-header">
@@ -11,7 +15,15 @@ const RecentSearches = ({ users, onSelect }) => {
       <ul>
         {users.map((user) => (
           <li key={user}>
-            <button onClick={() => onSelect(user)}>
+            <button
+              onClick={() => onSelect(user)}
+              onMouseEnter={() => {
+                queryClient.prefetchQuery({
+                  queryKey: ["user", user],
+                  queryFn: () => fetchGithubUser(user),
+                });
+              }}
+            >
               <FaUser className="user-icon" />
               {user}
             </button>
